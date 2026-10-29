@@ -288,6 +288,10 @@
     function open(movie) {
         var title = movie.title || movie.name || movie.original_title || movie.original_name || '';
         var cancelled = false;
+        // Пункт нажат из списка «Смотреть»: его контроллер 'select' ещё числится активным,
+        // хотя сам список уже закрыт. Возвращать управление надо карточке, иначе пульт
+        // уходит в закрытый список и интерфейс «зависает».
+        Lampa.Controller.toggle('content');
         Lampa.Loading.start(function () {
             cancelled = true;
             Lampa.Loading.stop();
@@ -323,11 +327,10 @@
                 return;
             }
 
-            var controller = Lampa.Controller.enabled().name;
             var choose = function (item, invert) {
                 // долгое нажатие Select сам не закрывает
                 if (invert) Lampa.Select.hide();
-                Lampa.Controller.toggle(controller);
+                Lampa.Controller.toggle('content');
                 if (item.stream) return play(item.stream, title + ' — ' + item.title, invert);
                 if (item.rutube) {
                     rutubeStream(item.rutube, function (url) {
@@ -342,7 +345,7 @@
                 items: items,
                 onSelect: function (item) { choose(item, false); },
                 onLong: function (item) { choose(item, true); },
-                onBack: function () { Lampa.Controller.toggle(controller); }
+                onBack: function () { Lampa.Controller.toggle('content'); }
             });
         });
     }
