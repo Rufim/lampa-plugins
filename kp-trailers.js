@@ -193,10 +193,37 @@
         });
     }
 
+    // Мастер-плейлист RuTube подписан вместе с параметром guids, где есть запятые. Android-
+    // приложение Lampa перед запуском внешнего плеера кодирует адрес (Uri.encode), запятые
+    // становятся %2C — и RuTube отвечает 403. Поэтому отдаём плееру ссылку на лучшее качество
+    // из мастер-плейлиста: в ней таких символов нет.
+    function bestVariant(master, text) {
+        if (typeof text !== 'string') return '';
+        var lines = text.split(/\r?\n/);
+        var best = '';
+        var bestRate = -1;
+        for (var i = 0; i < lines.length; i++) {
+            var m = lines[i].match(/^#EXT-X-STREAM-INF:.*?BANDWIDTH=(\d+)/);
+            if (!m) continue;
+            var url = (lines[i + 1] || '').trim();
+            if (!url || url.charAt(0) === '#') continue;
+            if (!/^https?:\/\//.test(url)) url = master.replace(/[^\/?]*(\?.*)?$/, '') + url;
+            var rate = Number(m[1]);
+            if (rate > bestRate) {
+                bestRate = rate;
+                best = url;
+            }
+        }
+        return best;
+    }
+
     function rutubeStream(id, done) {
         request('https://rutube.ru/api/play/options/' + id + '/?format=json&no_404=true', false, function (json) {
-            var url = json && json.video_balancer && (json.video_balancer.m3u8 || json.video_balancer.default);
-            done(url || '');
+            var master = json && json.video_balancer && (json.video_balancer.m3u8 || json.video_balancer.default);
+            if (!master) return done('');
+            request(master, true, function (text) {
+                done(bestVariant(master, text) || master);
+            });
         });
     }
 
