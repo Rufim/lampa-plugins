@@ -202,8 +202,41 @@
 
     // ---------- Воспроизведение ----------
 
+    // Поток Кинопоиска отдаёт CORS только своему сайту, а плеер Lampa грузит видео с
+    // crossorigin="anonymous" — и браузер его режет. Без атрибута WebView играет HLS сам и
+    // CORS не спрашивает. Снимаем атрибут только для своих трейлеров, остальным возвращаем.
+    var ownStreams = {};
+
+    function patchVideoSrc() {
+        var proto = window.HTMLMediaElement && HTMLMediaElement.prototype;
+        var desc = proto && Object.getOwnPropertyDescriptor(proto, 'src');
+        if (!desc || !desc.set || !desc.configurable) return;
+
+        Object.defineProperty(proto, 'src', {
+            configurable: true,
+            enumerable: desc.enumerable,
+            get: desc.get,
+            set: function (value) {
+                try {
+                    if (ownStreams[value]) {
+                        if (this.hasAttribute('crossorigin')) {
+                            this.removeAttribute('crossorigin');
+                            this.__kptCors = true;
+                        }
+                    } else if (this.__kptCors) {
+                        this.setAttribute('crossorigin', 'anonymous');
+                        this.__kptCors = false;
+                    }
+                } catch (e) {}
+                desc.set.call(this, value);
+            }
+        });
+    }
+
     function playerMode(invert) {
-        var mode = Lampa.Storage.get(KEY_PLAYER, 'inner') === 'android' ? 'android' : 'inner';
+        // По умолчанию внешний: потоки КП и RuTube без CORS, и встроенный плеер может
+        // играть их только нативно — на части приставок (HiSilicon) тогда звук без картинки.
+        var mode = Lampa.Storage.get(KEY_PLAYER, 'android') === 'inner' ? 'inner' : 'android';
         if (invert) mode = mode === 'android' ? 'inner' : 'android';
         if (mode === 'android' && !(Lampa.Platform && Lampa.Platform.is && Lampa.Platform.is('android'))) mode = 'inner';
         return mode;
@@ -216,6 +249,7 @@
             launch_player: playerMode(invert),
             hls_type: 'native'
         };
+        ownStreams[url] = true;
         log('play', data.launch_player, url);
         Lampa.Player.play(data);
         Lampa.Player.playlist([data]);
@@ -342,7 +376,7 @@
                 name: KEY_PLAYER,
                 type: 'select',
                 values: { inner: 'Встроенный', android: 'Внешний (Android)' },
-                default: 'inner'
+                default: 'android'
             },
             field: {
                 name: 'Плеер для трейлеров',
@@ -352,6 +386,7 @@
     }
 
     function start() {
+        patchVideoSrc();
         addSettings();
         Lampa.Listener.follow('full', function (e) {
             if (e.type === 'complite') addButton(e);
